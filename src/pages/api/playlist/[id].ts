@@ -1,45 +1,72 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-
-import Playlist, { Model } from "~/models/Playlist.model";
+import { GetStaticPropsContext, InferGetStaticPropsType } from "next/types";
+import type { NextPageWithLayout } from "~/types/common.types";
 import dbConnect from "~/libraries/mongoose.library";
-import { getPlaylistById } from "~/libraries/api.library";
+import { Container, Layout } from "~/components";
+import { getAllIds, getPlaylistById } from "~/libraries/api.library";
+import Head from "next/head";
+import usePlaylist from "~/hooks/usePlaylist.hook";
 
-type Errors = "Server error!";
-
-export interface Response {
-  data?: Model | null;
-  error?: { message: Errors };
-}
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<Response>
-) {
-  const { method, query } = req;
-
-  let { id } = query;
-
-  if (Array.isArray(id)) {
-    id = id[0];
-  }
-
+export const getStaticProps = async (ctx: GetStaticPropsContext) => {
+  const id = ctx?.params?.id?.toString();
   await dbConnect();
+  const data = await getPlaylistById(id);
 
-  if (method === "GET") {
-    try {
-      const playlist = await getPlaylistById(id);
-      res.status(200).json({ data: playlist });
-    } catch (err) {
-      res.status(500).json({ error: { message: "Server error!" } });
-    }
+  if (!data) {
+    return {
+      notFound: true,
+    };
   }
 
-  if (method === "DELETE") {
-    try {
-      const playlist = await Playlist.findByIdAndDelete<Model>(id);
-      res.status(200).json({ data: playlist });
-    } catch (err) {
-      res.status(500).json({ error: { message: "Server error!" } });
-    }
-  }
-}
+  return {
+    props: {
+      id: data.id,
+      fallbackData: {
+        data,
+      },
+    },
+    revalidate: 60 * 5,
+  };
+};
+
+export const getStaticPaths = async () => {
+  await dbConnect();
+  const ids = await getAllIds();
+
+  const paths = ids.map((id) => {
+    return {
+      params: {
+        id,
+      },
+    };
+  });
+
+  return {
+    paths,
+    fallback: true,
+  };
+};
+
+type Props = InferGetStaticPropsType<typeof getStaticProps>;
+
+const Playlist: NextPageWithLayout<Props> = ({ id, fallbackData }) => {
+  const { data, isLoading } = usePlaylist({
+    id,
+    fallbackData,
+    revalidateOnMount: false,
+  });
+  return (
+    <>
+      <Head>
+        <title>DaftAcademy - Lista</title>
+      </Head>
+
+      <Container>{<div>PlaylistId: {id}</div>}</Container>
+    </>
+  );
+};
+
+export default Playlist;
+
+Playlist.getLayout = (page) => {
+  return <Layout>{page}</Layout>;
+};
